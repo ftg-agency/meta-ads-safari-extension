@@ -14,3 +14,7 @@ safari/build/
 
 # Node (на случай, если появятся dev-зависимости)
 node_modules/
+
+# Generated Safari Xcode project (kept outside the repo)
+/FB Ad Library Scraper/
+*.xcodeproj/

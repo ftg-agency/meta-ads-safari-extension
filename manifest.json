@@ -3,7 +3,7 @@
   "name": "FB Ad Library Scraper",
   "version": "1.0.0",
   "description": "Сбор и разбор объявлений из Facebook Ad Library для конкурентного анализа. Локально, без серверов.",
-  "permissions": ["activeTab", "scripting", "storage", "downloads", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": ["*://*.facebook.com/*", "*://*.fbcdn.net/*"],
   "background": {
     "service_worker": "src/service-worker.js"
