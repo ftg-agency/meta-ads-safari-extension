@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+
+# Локальные служебные
+.claude/
+.env-bootstrap-tmp
+
+# Сборка Safari (генерируется build.sh)
+safari/build/
+
+# Артефакты тестов
+/tmp-test/
+*.zip
+
+# Node (на случай, если появятся dev-зависимости)
+node_modules/

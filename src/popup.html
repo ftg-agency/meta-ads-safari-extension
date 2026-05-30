@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>Ad Library Scraper</title>
+</head>
+<body>
+  <h1>Ad Library Scraper</h1>
+
+  <div class="statusbar">
+    <span id="status" class="status">Готов</span>
+    <span class="count"><b id="count">0</b> объявлений</span>
+  </div>
+
+  <fieldset>
+    <legend>Параметры сбора</legend>
+    <label class="field">Максимум объявлений
+      <input type="number" id="maxAds" value="1000" min="1" step="50">
+    </label>
+    <div class="grid2">
+      <label class="field">Задержка, мин (мс)
+        <input type="number" id="minDelay" value="2500" min="0" step="250">
+      </label>
+      <label class="field">Задержка, макс (мс)
+        <input type="number" id="maxDelay" value="5000" min="0" step="250">
+      </label>
+    </div>
+    <label class="field">Пустых проходов до остановки
+      <input type="number" id="idleRounds" value="5" min="1">
+    </label>
+    <label class="check"><input type="checkbox" id="manualScroll"> Ручной скролл (не скроллить автоматически)</label>
+    <label class="check"><input type="checkbox" id="drillIn"> Проваливаться в карточки (полный текст)</label>
+    <label class="check"><input type="checkbox" id="drillEu"> Данные по охвату в ЕС (медленно, выше риск лимита)</label>
+  </fieldset>
+
+  <div class="row">
+    <button id="btnStart" class="primary">Старт</button>
+    <button id="btnStop" disabled>Стоп</button>
+    <button id="btnClear" class="ghost">Очистить</button>
+  </div>
+
+  <fieldset>
+    <legend>Экспорт</legend>
+    <label class="check"><input type="checkbox" id="downloadMedia"> Скачивать медиафайлы (а не только ссылки)</label>
+    <div class="row wrap">
+      <button id="btnJSON" disabled>JSON</button>
+      <button id="btnCSV" disabled>CSV</button>
+      <button id="btnMedia" disabled>Медиа</button>
+      <button id="btnArchive" disabled>Скачать архив (ZIP)</button>
+    </div>
+  </fieldset>
+
+  <p class="hint">
+    Совет: меньше всего риск блокировки — собирать одного рекламодателя.
+    Откройте <code>…/ads/library/?…&amp;view_all_page_id=&lt;ID&gt;</code>,
+    а не широкий поиск по ключевым словам.
+  </p>
+
+  <script src="lib/ext-api.js"></script>
+  <script src="lib/zip.js"></script>
+  <script src="lib/exporter.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
