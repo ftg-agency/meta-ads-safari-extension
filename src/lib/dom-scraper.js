@@ -148,12 +148,16 @@
       if (t.length > best.length) best = t;
     });
     if (best) return best;
-    // запасной путь — самый длинный листовой текст
+    // запасной путь — самый длинный листовой span, НО без служебного текста
+    // (Library ID / даты / «Started running» / «N ads use this creative»).
+    const META = /Library ID|Идентификатор|Started running|Запущено|ads? use this creative|Sponsored|Platforms|Open Dropdown|See (?:ad|summary) details|EU transparency/i;
     card.querySelectorAll('span').forEach((el) => {
-      if (el.children.length === 0) {
-        const t = textOf(el);
-        if (t.length > best.length && t.length < 6000) best = t;
-      }
+      if (el.children.length !== 0) return;
+      const t = textOf(el);
+      if (t.length <= best.length || t.length >= 6000) return;
+      if (META.test(t)) return;
+      if (/^[A-Z][a-z]{2}\s+\d{1,2},\s*\d{4}/.test(t)) return; // дата
+      best = t;
     });
     return best;
   }
@@ -210,8 +214,18 @@
     return ad;
   }
 
-  // Элемент, чей СОБСТВЕННЫЙ текст содержит «Library ID …», но ни один из прямых
-  // детей его не содержит — то есть самый узкий носитель этого ID (один на карточку).
+  // Сколько РАЗНЫХ Library ID в поддереве элемента.
+  function countIds(el) {
+    const t = el.textContent || '';
+    if (!RE_ID.test(t)) return 0;
+    const re = /(?:Library ID|Идентификатор библиотеки|Identyfikator)\D*(\d{6,})/gi;
+    const ids = new Set();
+    let m;
+    while ((m = re.exec(t)) !== null) ids.add(m[1]);
+    return ids.size;
+  }
+
+  // Узкий носитель ID: его текст содержит Library ID, но ни один прямой ребёнок — нет.
   function elementOwnsId(el) {
     if (!RE_ID.test(el.textContent || '')) return false;
     for (const ch of el.children) {
@@ -220,22 +234,25 @@
     return true;
   }
 
-  // От узкого носителя ID поднимаемся к контейнеру карточки: первый предок, в
-  // котором появляется медиа или достаточно крупный текст (а не вся сетка сразу).
+  // Контейнер карточки = САМЫЙ БОЛЬШОЙ предок, всё ещё содержащий ровно ОДИН
+  // Library ID. Так внутрь попадают тело, медиа и кнопка «See ad details»
+  // именно этой карточки, а соседние карточки не сливаются.
   function cardContainerFor(idEl) {
     let el = idEl;
-    for (let i = 0; i < 8 && el.parentElement; i++) {
-      el = el.parentElement;
-      if (el.querySelector('img, video')) return el;
-      if ((el.textContent || '').length > 80) return el;
+    let best = idEl;
+    for (let i = 0; i < 14 && el.parentElement; i++) {
+      const p = el.parentElement;
+      const n = countIds(p);
+      if (n === 1) { best = p; el = p; }     // ещё одна карточка — расширяемся
+      else break;                            // у родителя ≥2 id — дальше нельзя
     }
-    return idEl.parentElement || idEl;
+    return best;
   }
 
   /**
    * Находит карточки на текущем экране и парсит их, сохраняя ссылку на DOM-узел
-   * (нужно для drill-in). Идём от точечного носителя ID вверх к карточке — чтобы
-   * не схлопнуть всю сетку в одну «карточку».
+   * (нужно для drill-in). От точечного носителя ID расширяемся вверх до полного
+   * контейнера карточки (с одним id) — чтобы взять тело/медиа, но не слить соседей.
    * @param {Element} [root=document]
    * @returns {Array<{ad:Object, el:Element}>}
    */

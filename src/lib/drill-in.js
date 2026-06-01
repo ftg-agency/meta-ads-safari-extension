@@ -164,14 +164,22 @@
       opts = opts || {};
       await this._throttle();
 
+      // Карточка может быть уже откреплена от DOM (виртуальный скролл FB).
+      if (!card || !card.isConnected) return { _err: 'карточка вне DOM (скролл)' };
+
+      // подвести карточку в зону видимости, чтобы FB её не «усыпил»
+      try { card.scrollIntoView({ block: 'center' }); } catch (_) { /* */ }
+      await this.delay(250);
+      if (!card.isConnected) return { _err: 'карточка вне DOM (скролл)' };
+
       // «See ad details» открывает панель с EU transparency.
       // «See summary details» — это группа объявлений (без раздела ЕС у самой группы),
       // поэтому для данных ЕС нужен именно «See ad details».
       let trigger = this._findByText(card, /(See ad details|Информация об объявлении)/i);
       if (!trigger) trigger = this._findByText(card, /(See summary details|Сводные данные)/i);
-      if (!trigger) return null;
+      if (!trigger) return { _err: 'кнопка деталей не найдена' };
 
-      try { trigger.click(); } catch (_) { return null; }
+      try { trigger.click(); } catch (_) { return { _err: 'клик не прошёл' }; }
 
       // панель подгружает данные ЕС асинхронно — ждём появления охвата (до ~6с)
       let modal = null;

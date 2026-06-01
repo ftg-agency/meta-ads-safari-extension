@@ -297,7 +297,10 @@
       state.round++;
       const found = Dom ? Dom.findCards(document) : [];
       const fresh = pushAds(found.map((f) => f.ad), 'dom');
-      if (state.config.drillIn) enqueueDrill(found);
+
+      // Полный текст уже взят из карточки (pre-wrap). Модалку открываем ТОЛЬКО
+      // ради данных ЕС — поэтому drill ставим в очередь лишь при drillEu.
+      if (state.config.drillEu) enqueueDrill(found);
 
       setStatus('running', { message: 'сбор… ' + state.order.length + ' объявл.' });
       if (fresh > 0) {
@@ -308,10 +311,32 @@
         log('проход ' + state.round + ': новых нет (' + state.idle + '/' + state.config.idleRounds + ')', 'dim');
       }
 
+      // При сборе ЕС нельзя укатываться вперёд: иначе карточки в очереди деталей
+      // открепятся (виртуальный скролл) и клик не пройдёт. Ждём, пока очередь
+      // рассосётся до небольшого хвоста.
+      if (state.config.drillEu) {
+        let guard = 0;
+        while (state.running && state.drillQueue.length > 4 && guard < 60) {
+          setStatus('running', { message: 'детали ЕС ' + state.drillDone + '/' + state.drillTotal + ' (жду очередь)' });
+          await sleep(1000);
+          guard++;
+        }
+      }
+
       if (state.idle >= state.config.idleRounds) break;
 
-      window.scrollBy(0, Math.floor(window.innerHeight * 0.9));
+      // Скроллим МЯГКО (0.6 экрана): при виртуальном скролле слишком большой шаг
+      // успевает открепить карточки до того, как мы их снимем — отсюда недобор
+      // (52 из 73). Меньший шаг + пауза на догрузку держит выдачу под нами.
+      const beforeY = window.scrollY;
+      window.scrollBy(0, Math.floor(window.innerHeight * 0.6));
       await sleep(rnd(state.config.minDelay, state.config.maxDelay));
+
+      // Если страница не прокрутилась (достигли низа) — даём FB догрузить ещё.
+      if (window.scrollY === beforeY) {
+        await sleep(1500);
+        if (window.scrollY === beforeY) state.idle++; // реально низ — копим к остановке
+      }
     }
 
     // конец скролла — дожидаемся хвоста фоновых деталей
