@@ -216,11 +216,33 @@
     };
   }
 
+  // --- ДИАГНОСТИКА: ловим graphql-ответы с признаками охвата ЕС ---
+  // Цель — выяснить, есть ли охват ЕС прямо в graphql (тогда модалки не нужны).
+  // В консоли набери  __FBALS_DUMP_EU()  — скачается файл с такими ответами.
+  const euDump = [];
+  const EU_HINT = /(eu_total_reach|reach_estimate|aaa_info|age_country_gender|reached_count|eu_reach|total_reach|demographic_distribution|delivery_by_region)/i;
+  function captureEuPayload(text) {
+    if (!text || !EU_HINT.test(text)) return;
+    if (euDump.length >= 8) return;
+    euDump.push(text);
+    try { console.log('%c[FBALS] поймал graphql с признаком ЕС (#' + euDump.length + '). Набери __FBALS_DUMP_EU() чтобы скачать.', 'color:#2e7d32;font-weight:bold'); } catch (_) {}
+  }
+  try {
+    window.__FBALS_DUMP_EU = function () {
+      if (!euDump.length) { console.log('[FBALS] пока ничего не поймал — открой карточку с EU transparency и подожди.'); return; }
+      const blob = new Blob([euDump.join('\n\n=====FBALS_SPLIT=====\n\n')], { type: 'text/plain' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = 'fbals-eu-graphql.txt'; a.click();
+      console.log('[FBALS] выгружено ' + euDump.length + ' ответов в fbals-eu-graphql.txt');
+    };
+  } catch (_) { /* */ }
+
   // --- приём graphql из MAIN-world ---
   window.addEventListener('message', function (ev) {
     if (ev.source !== window) return;
     const d = ev.data;
     if (!d || d.source !== 'FBALS_INTERCEPT') return;
+    captureEuPayload(d.payload);
     if (!state.running) {
       state.buffer.push(d.payload);
       if (state.buffer.length > 80) state.buffer.shift();
