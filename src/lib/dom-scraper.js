@@ -58,6 +58,23 @@
     return (el && el.textContent ? el.textContent : '').trim();
   }
 
+  // Текст с пробелами на границах блоков. textContent склеивает соседние спаны
+  // («Lowimpressioncount», «Impressions:<100»), из-за чего regex с пробелами не
+  // матчатся — тот же баг, что чинили для данных ЕС.
+  function spacedText(root) {
+    if (!root) return '';
+    const parts = [];
+    const walk = (node) => {
+      for (let i = 0; i < node.childNodes.length; i++) {
+        const c = node.childNodes[i];
+        if (c.nodeType === 3) { const v = c.nodeValue; if (v && v.trim()) parts.push(v.trim()); }
+        else if (c.nodeType === 1) walk(c);
+      }
+    };
+    walk(root);
+    return parts.join(' ');
+  }
+
   const RE_ID = /(?:Library ID|Идентификатор библиотеки|Identyfikator)\D*(\d{6,})/i;
   const RE_INACTIVE = /(Inactive|Неактивно|Не активно)/i;
   const RE_STARTED = /(?:Started running on|Запущено|Active since)\s*([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})/i;
@@ -173,12 +190,14 @@
     return isNaN(n) ? null : n;
   }
 
-  // признаки/доп.метрики, видимые прямо в карточке
+  // признаки/доп.метрики, видимые прямо в карточке.
+  // Используем spacedText: иначе «Low impression count» склеивается в DOM и не
+  // ловится (поэтому раньше распознавался лишь у части карточек).
   function parseFlags(card) {
-    const t = textOf(card);
+    const t = spacedText(card).replace(/\s+/g, ' ');
     const out = {
       has_eu_transparency: /EU transparency|Прозрачность в ЕС/i.test(t),
-      low_impressions: /[Ll]ow impression count|Низк\w* (?:число|количество) показ/i.test(t),
+      low_impressions: /low\s*impression\s*count|Низк\w* (?:число|количество) показ/i.test(t),
       impressions: '',
       total_active_time: ''
     };
