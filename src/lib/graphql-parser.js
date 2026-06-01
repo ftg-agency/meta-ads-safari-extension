@@ -154,6 +154,14 @@
       page_name: String(firstDefined(node.page_name, snap.page_name) || ''),
       eu_total_reach: (node.eu_total_reach !== undefined) ? node.eu_total_reach : null,
       eu_reach_breakdown: asArray(node.eu_reach_breakdown),
+      targeting_age: '',
+      targeting_gender: '',
+      targeting_locations: '',
+      ads_using_creative: (node.collation_count !== undefined && node.collation_count !== null) ? node.collation_count : null,
+      has_eu_transparency: false,
+      low_impressions: false,
+      impressions: '',
+      total_active_time: '',
       source: 'graphql'
     };
   }

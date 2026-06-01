@@ -11,52 +11,38 @@
 
   <div class="statusbar">
     <span id="status" class="status">Готов</span>
-    <span class="count"><b id="count">0</b> объявлений</span>
+    <span class="count"><b id="count">0</b> объявл.</span>
   </div>
 
-  <fieldset>
-    <legend>Параметры сбора</legend>
-    <label class="field">Максимум объявлений
-      <input type="number" id="maxAds" value="1000" min="1" step="50">
-    </label>
-    <div class="grid2">
-      <label class="field">Задержка, мин (мс)
-        <input type="number" id="minDelay" value="2500" min="0" step="250">
-      </label>
-      <label class="field">Задержка, макс (мс)
-        <input type="number" id="maxDelay" value="5000" min="0" step="250">
-      </label>
-    </div>
-    <label class="field">Пустых проходов до остановки
-      <input type="number" id="idleRounds" value="5" min="1">
-    </label>
-    <label class="check"><input type="checkbox" id="manualScroll"> Ручной скролл (не скроллить автоматически)</label>
-    <label class="check"><input type="checkbox" id="drillIn"> Проваливаться в карточки (полный текст)</label>
-    <label class="check"><input type="checkbox" id="drillEu"> Данные по охвату в ЕС (медленно, выше риск лимита)</label>
-  </fieldset>
+  <!-- Полный авто: одна кнопка. -->
+  <button id="btnRun" class="primary big">Собрать объявления</button>
 
-  <div class="row">
-    <button id="btnStart" class="primary">Старт</button>
-    <button id="btnStop" disabled>Стоп</button>
-    <button id="btnClear" class="ghost">Очистить</button>
-  </div>
+  <!-- Живой лог процесса. -->
+  <div id="log" class="log" aria-live="polite"></div>
 
-  <fieldset>
-    <legend>Экспорт</legend>
-    <label class="check"><input type="checkbox" id="downloadMedia"> Скачивать медиафайлы (а не только ссылки)</label>
+  <div class="exports">
+    <div class="exports-title">Сохранить результат</div>
     <div class="row wrap">
-      <button id="btnJSON" disabled>JSON</button>
+      <button id="btnArchive" disabled>Архив (ZIP)</button>
       <button id="btnCSV" disabled>CSV</button>
-      <button id="btnMedia" disabled>Медиа</button>
-      <button id="btnArchive" disabled>Скачать архив (ZIP)</button>
+      <button id="btnJSON" disabled>JSON</button>
     </div>
-  </fieldset>
+    <button id="btnClear" class="ghost small" disabled>Очистить собранное</button>
+  </div>
 
-  <p class="hint">
-    Совет: меньше всего риск блокировки — собирать одного рекламодателя.
-    Откройте <code>…/ads/library/?…&amp;view_all_page_id=&lt;ID&gt;</code>,
-    а не широкий поиск по ключевым словам.
-  </p>
+  <details id="adv">
+    <summary>Дополнительно</summary>
+    <label class="check"><input type="checkbox" id="deep" checked> Полный текст из карточек (медленнее)</label>
+    <label class="check"><input type="checkbox" id="deepEu"> Данные по охвату в ЕС (ещё медленнее, выше риск лимита)</label>
+    <label class="field">Максимум объявлений (0 — без лимита)
+      <input type="number" id="maxAds" value="0" min="0" step="50">
+    </label>
+    <p class="hint">
+      Совет: меньше всего риск блокировки — собирать одного рекламодателя
+      (<code>…/ads/library/?…&amp;view_all_page_id=&lt;ID&gt;</code>),
+      а не широкий поиск по ключевым словам.
+    </p>
+  </details>
 
   <script src="lib/ext-api.js"></script>
   <script src="lib/zip.js"></script>

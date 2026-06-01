@@ -33,6 +33,15 @@
       page_name: '',
       eu_total_reach: null,
       eu_reach_breakdown: [],
+      targeting_age: '',
+      targeting_gender: '',
+      targeting_locations: '',
+      // доп. поля из реальной разметки Ad Library
+      ads_using_creative: null,   // «N ads use this creative and text»
+      has_eu_transparency: false, // есть ли раздел EU transparency у объявления
+      low_impressions: false,     // бейдж «Low impression count»
+      impressions: '',            // строка вида «<100», если показана
+      total_active_time: '',      // «Total active time 7 hrs», если показано
       source: 'dom'
     };
   }
@@ -47,9 +56,19 @@
   }
 
   const RE_ID = /(?:Library ID|Идентификатор библиотеки|Identyfikator)\D*(\d{6,})/i;
-  const RE_ACTIVE = /(Active|Активно)/i;
   const RE_INACTIVE = /(Inactive|Неактивно|Не активно)/i;
-  const RE_STARTED = /(?:Started running on|Запущено|Active since)\s*([A-Za-zА-Яа-я0-9 ,.]+?\d{4})/i;
+  const RE_STARTED = /(?:Started running on|Запущено|Active since)\s*([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})/i;
+  // диапазон дат у неактивных: «Apr 25, 2026 - May 12, 2026»
+  const RE_RANGE = /([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})\s*[-–—]\s*([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})/;
+  const RE_USES = /(\d[\d,\s]*)\s*ads?\s+use\s+this\s+creative/i;
+  const RE_ACTIVE_TIME = /Total active time\s+([^\n·]+?)(?:\s{2,}|$|·)/i;
+  const RE_IMPRESSIONS = /Impressions:\s*([<>]?\s*[\d,. KkMm+-]+)/;
+
+  function isoFromText(s) {
+    if (!s) return null;
+    const d = Date.parse(s);
+    return isNaN(d) ? null : new Date(d).toISOString().slice(0, 10);
+  }
 
   function findAdId(card) {
     // 1) по тексту «Library ID: …»
@@ -65,21 +84,22 @@
   }
 
   function parseStatus(card) {
+    // статус — короткий бейдж в начале карточки; ищем именно слово, а не вхождение
     const t = textOf(card);
     if (RE_INACTIVE.test(t)) return 'inactive';
-    if (RE_ACTIVE.test(t)) return 'active';
+    if (/\bActive\b|\bАктивно\b/.test(t)) return 'active';
     return 'active';
   }
 
   function parseDates(card) {
     const t = textOf(card);
-    const m = t.match(RE_STARTED);
-    let start = null;
-    if (m) {
-      const d = Date.parse(m[1]);
-      if (!isNaN(d)) start = new Date(d).toISOString().slice(0, 10);
-    }
-    return { start_date: start, end_date: null };
+    // 1) диапазон «Apr 25, 2026 - May 12, 2026» (обычно у неактивных)
+    const r = t.match(RE_RANGE);
+    if (r) return { start_date: isoFromText(r[1]), end_date: isoFromText(r[2]) };
+    // 2) «Started running on May 23, 2026» (активные)
+    const s = t.match(RE_STARTED);
+    if (s) return { start_date: isoFromText(s[1]), end_date: null };
+    return { start_date: null, end_date: null };
   }
 
   function parseMedia(card) {
@@ -119,15 +139,47 @@
   }
 
   function parseBody(card) {
-    // самый длинный текстовый блок внутри карточки — обычно это тело объявления
+    // В реальной разметке Ad Library тело объявления лежит в контейнере
+    // <div style="white-space: pre-wrap">. Берём самый длинный такой блок.
     let best = '';
-    card.querySelectorAll('div, span').forEach((el) => {
+    const blocks = card.querySelectorAll('div[style*="pre-wrap"], div[style*="white-space"]');
+    blocks.forEach((el) => {
+      const t = textOf(el);
+      if (t.length > best.length) best = t;
+    });
+    if (best) return best;
+    // запасной путь — самый длинный листовой текст
+    card.querySelectorAll('span').forEach((el) => {
       if (el.children.length === 0) {
         const t = textOf(el);
-        if (t.length > best.length && t.length < 4000) best = t;
+        if (t.length > best.length && t.length < 6000) best = t;
       }
     });
     return best;
+  }
+
+  // «N ads use this creative and text» — сколько объявлений на этом креативе
+  function parseUsesCount(card) {
+    const m = textOf(card).match(RE_USES);
+    if (!m) return null;
+    const n = parseInt(m[1].replace(/[^\d]/g, ''), 10);
+    return isNaN(n) ? null : n;
+  }
+
+  // признаки/доп.метрики, видимые прямо в карточке
+  function parseFlags(card) {
+    const t = textOf(card);
+    const out = {
+      has_eu_transparency: /EU transparency|Прозрачность в ЕС/i.test(t),
+      low_impressions: /[Ll]ow impression count|Низк\w* (?:число|количество) показ/i.test(t),
+      impressions: '',
+      total_active_time: ''
+    };
+    const imp = t.match(RE_IMPRESSIONS);
+    if (imp) out.impressions = imp[1].replace(/\s+/g, ' ').trim();
+    const act = t.match(RE_ACTIVE_TIME);
+    if (act) out.total_active_time = act[1].trim();
+    return out;
   }
 
   function parseCard(card, idHint) {
@@ -148,6 +200,12 @@
     ad.link_url = parseLink(card);
     ad.landing_domain = domainOf(ad.link_url);
     ad.body_text = parseBody(card);
+    ad.ads_using_creative = parseUsesCount(card);
+    const flags = parseFlags(card);
+    ad.has_eu_transparency = flags.has_eu_transparency;
+    ad.low_impressions = flags.low_impressions;
+    ad.impressions = flags.impressions;
+    ad.total_active_time = flags.total_active_time;
     ad.ad_snapshot_url = 'https://www.facebook.com/ads/library/?id=' + ad.ad_archive_id;
     return ad;
   }

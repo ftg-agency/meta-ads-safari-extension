@@ -68,37 +68,89 @@
       return null;
     },
 
+    // Находит ИМЕННО панель деталей (а не навигационное меню Меты, у которого
+    // тоже role="dialog"!). Берём последний dialog с признаками панели деталей.
     _findOpenModal: function () {
-      return document.querySelector('div[role="dialog"]');
+      const dialogs = Array.prototype.slice.call(document.querySelectorAll('div[role="dialog"]'));
+      // фильтруем меню навигации (Privacy/Terms/Cookies/Ad Library Report)
+      const real = dialogs.filter(function (d) {
+        const t = d.textContent || '';
+        if (/Ad Library Report|Branded Content|Subscribe to email/i.test(t)) return false; // это меню
+        return /Ad Details|EU ad delivery|Transparency by location|Reach|Информация об объявлении|охват/i.test(t);
+      });
+      if (real.length) return real[real.length - 1];
+      // запасной вариант — самый «текстастый» dialog, но не меню
+      const notMenu = dialogs.filter((d) => !/Ad Library Report|Branded Content/i.test(d.textContent || ''));
+      notMenu.sort((a, b) => (b.textContent || '').length - (a.textContent || '').length);
+      return notMenu[0] || null;
     },
 
     _closeModal: function (modal) {
-      const close = (modal || document).querySelector('div[role="button"][aria-label], [aria-label*="Close"], [aria-label*="Закрыть"]');
-      if (close) { try { close.click(); } catch (_) { /* игнор */ } }
+      const close = (modal || document).querySelector('[aria-label="Close"], [aria-label*="Close"], [aria-label*="Закрыть"], div[role="button"][aria-label]');
+      if (close) { try { close.click(); return; } catch (_) { /* игнор */ } }
+      // запасной путь — Escape
+      try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (_) { /* */ }
     },
 
-    // достаём расширенные поля из открытой модалки
+    /**
+     * Достаёт расширенные поля из открытой панели деталей.
+     * Реальная структура (подтверждена на живой странице):
+     *   «EU ad delivery Reach 231 …»               — общий охват по ЕС
+     *   «Austria 18-24 Male 1 / Belgium 65+ Female 5» — разбивка стр./возр./пол
+     *   «Age 18-65+ years old», «Gender All», «Worldwide» — таргетинг
+     */
     scrapeDetails: function (modal) {
-      const out = { body_text: '', eu_total_reach: null, eu_reach_breakdown: [] };
+      const out = {
+        body_text: '',
+        eu_total_reach: null,
+        eu_reach_breakdown: [],
+        targeting_age: '',
+        targeting_gender: '',
+        targeting_locations: ''
+      };
       if (!modal) return out;
-      const text = (modal.textContent || '');
+      const text = (modal.textContent || '').replace(/\s+/g, ' ');
 
-      // полный текст объявления — самый длинный листовой блок
+      // полный текст объявления — самый длинный pre-wrap блок
       let best = '';
-      modal.querySelectorAll('div, span').forEach((el) => {
-        if (el.children.length === 0) {
-          const t = (el.textContent || '').trim();
-          if (t.length > best.length && t.length < 8000) best = t;
-        }
+      modal.querySelectorAll('div[style*="pre-wrap"], div[style*="white-space"]').forEach((el) => {
+        const t = (el.textContent || '').trim();
+        if (t.length > best.length) best = t;
       });
       out.body_text = best;
 
-      // охват в ЕС: «Total reach in EU / Общий охват в ЕС: 12 345»
-      const m = text.match(/(?:Total reach in EU|Охват в ЕС|Общий охват)[^\d]*([\d  .,]+)/i);
+      // общий охват ЕС: «EU ad delivery Reach 231 The number of Meta…»
+      let m = text.match(/EU ad delivery\s+Reach\s+([\d.,\s]+?)\s+The number/i) ||
+              text.match(/\bReach\s+([\d.,]+)\s+The number of Meta/i);
       if (m) {
-        const num = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-        if (!isNaN(num)) out.eu_total_reach = num;
+        const n = parseInt(m[1].replace(/[^\d]/g, ''), 10);
+        if (!isNaN(n)) out.eu_total_reach = n;
       }
+
+      // разбивка: «<Страна> <возраст> <пол> <число>»
+      const RE_ROW = /([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+){0,3})\s+(13-17|18-24|25-34|35-44|45-54|55-64|65\+)\s+(Male|Female|Unknown|All)\s+(\d+)/g;
+      const breakdown = [];
+      let r;
+      while ((r = RE_ROW.exec(text)) !== null) {
+        // отрезаем прилипший заголовок таблицы («…Range Gender Reach Austria»)
+        let loc = r[1].replace(/.*\b(?:Reach|Gender|Range|Location|Age)\b\s*/i, '').trim();
+        if (!loc || /Age|Range|Gender|Reach|Location/i.test(loc)) continue;
+        breakdown.push({ location: loc, age: r[2], gender: r[3], reach: parseInt(r[4], 10) });
+      }
+      out.eu_reach_breakdown = breakdown;
+
+      // если общий охват не нашли — сложим из разбивки
+      if (out.eu_total_reach === null && breakdown.length) {
+        out.eu_total_reach = breakdown.reduce((s, x) => s + x.reach, 0);
+      }
+
+      // таргетинг
+      const age = text.match(/Age\s+(\d{1,2}\s*-\s*\d{1,2}\+?\s*years old|\d{1,2}\+?\s*years old)/i);
+      if (age) out.targeting_age = age[1].replace(/\s+/g, ' ').trim();
+      const gen = text.match(/Gender\s+(All|Men|Women|Male|Female)/i);
+      if (gen) out.targeting_gender = gen[1];
+      if (/\bWorldwide\b/i.test(text)) out.targeting_locations = 'Worldwide';
+
       return out;
     },
 
@@ -112,31 +164,26 @@
       opts = opts || {};
       await this._throttle();
 
-      const trigger = this._findByText(card, /(See ad details|Информация об объявлении|See summary details|Сводные данные)/i);
+      // «See ad details» открывает панель с EU transparency.
+      // «See summary details» — это группа объявлений (без раздела ЕС у самой группы),
+      // поэтому для данных ЕС нужен именно «See ad details».
+      let trigger = this._findByText(card, /(See ad details|Информация об объявлении)/i);
+      if (!trigger) trigger = this._findByText(card, /(See summary details|Сводные данные)/i);
       if (!trigger) return null;
 
       try { trigger.click(); } catch (_) { return null; }
-      await this.delay(800);
 
-      const modal = this._findOpenModal();
+      // панель подгружает данные ЕС асинхронно — ждём появления охвата (до ~6с)
+      let modal = null;
+      for (let i = 0; i < 12; i++) {
+        await this.delay(500);
+        modal = this._findOpenModal();
+        if (modal && /EU ad delivery|Reach\s+\d|Transparency by location/i.test(modal.textContent || '')) break;
+      }
+      if (!modal) modal = this._findOpenModal();
       if (!modal) return null;
 
       const details = this.scrapeDetails(modal);
-
-      // данные по ЕС — отдельная вкладка/раздел, опционально
-      if (opts.eu) {
-        const euTab = this._findByText(modal, /(EU transparency|Прозрачность в ЕС|Сводные данные)/i);
-        if (euTab) {
-          try { euTab.click(); } catch (_) { /* игнор */ }
-          await this.delay(800);
-          const euData = this.scrapeDetails(this._findOpenModal() || modal);
-          if (euData.eu_total_reach !== null) {
-            details.eu_total_reach = euData.eu_total_reach;
-            details.eu_reach_breakdown = euData.eu_reach_breakdown;
-          }
-        }
-      }
-
       this._closeModal(modal);
       await this.delay(400);
       return details;

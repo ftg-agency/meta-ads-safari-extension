@@ -28,8 +28,18 @@ if (!self.FBALS_Analytics && typeof importScripts === 'function') {
     running: false,
     lastStatusExtra: null,
     startedAt: null,
+    log: [],   // кольцевой буфер для живого лога в popup
     meta: { page_id: '', page_name: '', source_url: '', filters: {} }
   };
+
+  const LOG_MAX = 200;
+  function addLog(text, level) {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const ts = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    store.log.push({ t: ts + '  ' + text, level: level || null });
+    if (store.log.length > LOG_MAX) store.log.shift();
+  }
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -196,6 +206,7 @@ if (!self.FBALS_Analytics && typeof importScripts === 'function') {
       statusExtra: store.lastStatusExtra,
       collected: store.order.length,
       hasData: store.order.length > 0,
+      log: store.log,
       page: { id: store.meta.page_id, name: store.meta.page_name },
       summary: ads.length ? Analytics.computeSummary(ads, { id: store.meta.page_id, name: store.meta.page_name }) : null
     };
@@ -211,6 +222,10 @@ if (!self.FBALS_Analytics && typeof importScripts === 'function') {
         schedulePersist();
         return; // ответ не нужен
 
+      case 'LOG':
+        addLog(msg.text, msg.level);
+        return;
+
       case 'STATUS':
         store.status = msg.status || store.status;
         store.lastStatusExtra = msg.extra || null;
@@ -225,9 +240,11 @@ if (!self.FBALS_Analytics && typeof importScripts === 'function') {
         return;
 
       case 'START':
+        store.log = [];
+        addLog('запуск…', 'dim');
         handleStart(msg.config)
-          .then((r) => sendResponse(r))
-          .catch((e) => sendResponse({ ok: false, error: String(e) }));
+          .then((r) => { if (r && !r.ok) addLog('не удалось запустить: ' + (r.error || ''), 'err'); sendResponse(r); })
+          .catch((e) => { addLog('ошибка запуска: ' + e, 'err'); sendResponse({ ok: false, error: String(e) }); });
         return true;
 
       case 'STOP':
@@ -247,6 +264,7 @@ if (!self.FBALS_Analytics && typeof importScripts === 'function') {
         store.order = [];
         store.status = 'idle';
         store.lastStatusExtra = null;
+        store.log = [];
         persist();
         sendResponse({ ok: true });
         return true;
