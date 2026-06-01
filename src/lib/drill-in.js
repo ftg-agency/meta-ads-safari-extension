@@ -92,6 +92,26 @@
       try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (_) { /* */ }
     },
 
+    // Текст элемента с пробелами на границах блоков (textContent их теряет,
+    // склеивая «EU ad deliveryReach231…» — это ломало парсинг ЕС).
+    _spacedText: function (root) {
+      if (!root) return '';
+      const parts = [];
+      const walk = (node) => {
+        for (let i = 0; i < node.childNodes.length; i++) {
+          const c = node.childNodes[i];
+          if (c.nodeType === 3) {
+            const v = c.nodeValue;
+            if (v && v.trim()) parts.push(v.trim());
+          } else if (c.nodeType === 1) {
+            walk(c);
+          }
+        }
+      };
+      walk(root);
+      return parts.join(' ');
+    },
+
     /**
      * Достаёт расширенные поля из открытой панели деталей.
      * Реальная структура (подтверждена на живой странице):
@@ -109,7 +129,10 @@
         targeting_locations: ''
       };
       if (!modal) return out;
-      const text = (modal.textContent || '').replace(/\s+/g, ' ');
+      // ВАЖНО: modal.textContent склеивает соседние блоки без пробелов
+      // («EU ad deliveryReach231The number…»), из-за чего ломаются regex.
+      // Собираем текст, вставляя пробел на границах элементов (как видит человек).
+      const text = this._spacedText(modal).replace(/\s+/g, ' ').trim();
 
       // полный текст объявления — самый длинный pre-wrap блок
       let best = '';
@@ -120,8 +143,8 @@
       out.body_text = best;
 
       // общий охват ЕС: «EU ad delivery Reach 231 The number of Meta…»
-      let m = text.match(/EU ad delivery\s+Reach\s+([\d.,\s]+?)\s+The number/i) ||
-              text.match(/\bReach\s+([\d.,]+)\s+The number of Meta/i);
+      let m = text.match(/EU ad delivery\s*Reach\s*([\d.,\s]+?)\s*The number/i) ||
+              text.match(/\bReach\s*([\d.,]+)\s*The number of Meta/i);
       if (m) {
         const n = parseInt(m[1].replace(/[^\d]/g, ''), 10);
         if (!isNaN(n)) out.eu_total_reach = n;
@@ -181,20 +204,70 @@
 
       try { trigger.click(); } catch (_) { return { _err: 'клик не прошёл' }; }
 
-      // панель подгружает данные ЕС асинхронно — ждём появления охвата (до ~6с)
+      // ждём появления панели
       let modal = null;
       for (let i = 0; i < 12; i++) {
         await this.delay(500);
         modal = this._findOpenModal();
-        if (modal && /EU ad delivery|Reach\s+\d|Transparency by location/i.test(modal.textContent || '')) break;
+        if (modal && /EU ad delivery|Transparency by location|Reach\s+\d|EU ad audience/i.test(modal.textContent || '')) break;
       }
       if (!modal) modal = this._findOpenModal();
-      if (!modal) return null;
+      if (!modal) return { _err: 'панель деталей не открылась' };
+
+      // Данные ЕС часто в свёрнутых секциях / подгружаются по мере прокрутки.
+      // Раскрываем секции и скроллим панель вниз, чтобы FB отрендерил охват.
+      await this._revealEu(modal);
 
       const details = this.scrapeDetails(modal);
+      // диагностика: почему ЕС пуст
+      if (details.eu_total_reach == null) {
+        const t = modal.textContent || '';
+        if (/Transparency by location|EU ad audience|EU ad delivery/i.test(t)) {
+          details._euNote = 'раздел ЕС есть, но охват не отрисован/не найден';
+        } else {
+          details._euNote = 'у объявления нет раздела охвата ЕС';
+        }
+      }
       this._closeModal(modal);
       await this.delay(400);
       return details;
+    },
+
+    // Раскрывает свёрнутые секции и прокручивает панель, чтобы подгрузился охват ЕС.
+    _revealEu: async function (modal) {
+      // 1) кликаем по сворачиваемым заголовкам, относящимся к ЕС
+      const heads = modal.querySelectorAll('[role="button"], [aria-expanded], summary, div[tabindex="0"]');
+      for (const h of heads) {
+        const t = (h.textContent || '').trim();
+        if (t.length < 60 && /EU ad delivery|EU ad audience|Transparency by location|Reach by location|охват|Прозрачность/i.test(t)) {
+          if (h.getAttribute('aria-expanded') === 'false' || true) {
+            try { h.click(); } catch (_) { /* */ }
+            await this.delay(250);
+          }
+        }
+      }
+      // 2) скроллим саму панель вниз порциями — ленивый рендер таблицы охвата
+      const scroller = this._scrollableInside(modal) || modal;
+      let lastReach = false;
+      for (let i = 0; i < 8; i++) {
+        try { scroller.scrollTop = scroller.scrollHeight; } catch (_) { /* */ }
+        await this.delay(350);
+        const hasReach = /EU ad delivery\s+Reach\s+\d|Reach\s+\d+\s+The number/i.test(modal.textContent || '');
+        if (hasReach && lastReach) break; // стабилизировалось
+        lastReach = hasReach;
+      }
+    },
+
+    // Находит прокручиваемый контейнер внутри панели.
+    _scrollableInside: function (modal) {
+      const all = modal.querySelectorAll('*');
+      for (const el of all) {
+        if (el.scrollHeight > el.clientHeight + 40) {
+          const ov = (el.ownerDocument.defaultView.getComputedStyle(el).overflowY || '');
+          if (/auto|scroll/.test(ov)) return el;
+        }
+      }
+      return null;
     }
   };
 

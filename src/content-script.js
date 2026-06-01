@@ -251,7 +251,11 @@
           }));
           sendToSW({ type: 'ADS', ads: [state.adsById[ad.ad_archive_id]] });
           const chars = (enrich.body_text || '').length;
-          log('✓ детали ' + ad.ad_archive_id + ' (' + chars + ' симв.' + (enrich.eu_total_reach != null ? (', ЕС ' + enrich.eu_total_reach) : '') + ') — ' + state.drillDone + '/' + state.drillTotal);
+          let euTxt;
+          if (enrich.eu_total_reach != null) euTxt = ', ЕС ' + enrich.eu_total_reach + ' (' + (enrich.eu_reach_breakdown || []).length + ' стр.)';
+          else euTxt = enrich._euNote ? (' — ' + enrich._euNote) : '';
+          log('✓ ' + ad.ad_archive_id + ' (' + chars + ' симв.' + euTxt + ') — ' + state.drillDone + '/' + state.drillTotal,
+              enrich.eu_total_reach != null ? 'ok' : null);
         } else {
           state.drillFails++;
           log('✗ детали ' + ad.ad_archive_id + ': ' + ((enrich && enrich._err) || 'не нашёл данных') + ' — ' + state.drillDone + '/' + state.drillTotal, 'warn');
