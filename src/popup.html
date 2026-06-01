@@ -14,40 +14,21 @@
     <span class="count"><b id="count">0</b> объявл.</span>
   </div>
 
-  <!-- Полный авто: одна кнопка. -->
   <button id="btnRun" class="primary big">Собрать объявления</button>
 
-  <!-- Живой лог процесса. -->
-  <div id="log" class="log" aria-live="polite"></div>
-
-  <div class="exports">
-    <div class="exports-title">Сохранить результат</div>
-    <div class="row wrap">
-      <button id="btnArchive" disabled>Архив (ZIP)</button>
-      <button id="btnCSV" disabled>CSV</button>
-      <button id="btnJSON" disabled>JSON</button>
-    </div>
-    <button id="btnClear" class="ghost small" disabled>Очистить собранное</button>
+  <!-- Прогресс: полоса + строка -->
+  <div class="progress" id="progressWrap">
+    <div class="progress-bar" id="progressBar"></div>
   </div>
+  <div class="progress-text" id="progressText">Готов к сбору</div>
 
-  <label class="check main-opt"><input type="checkbox" id="deepEu"> Собирать данные по охвату в ЕС <span class="muted">(медленно: открывает карточки, выше риск лимита)</span></label>
+  <label class="check main-opt"><input type="checkbox" id="deepEu"> Собирать данные по охвату в ЕС <span class="muted">(медленнее)</span></label>
 
-  <details id="adv">
-    <summary>Дополнительно</summary>
-    <label class="field">Максимум объявлений (0 — без лимита)
-      <input type="number" id="maxAds" value="0" min="0" step="50">
-    </label>
-    <p class="hint">
-      Полный текст, даты, домены, CTA, число копий креатива и медиа собираются
-      всегда и быстро. Охват по ЕU (страны/возраст/пол) требует открытия каждой
-      карточки — включай галку выше, если он нужен.
-    </p>
-    <p class="hint">
-      Меньше всего риск блокировки — собирать одного рекламодателя
-      (<code>…/ads/library/?…&amp;view_all_page_id=&lt;ID&gt;</code>),
-      а не широкий поиск по ключевым словам.
-    </p>
-  </details>
+  <label class="field">Максимум объявлений <span class="muted">(0 — без лимита)</span>
+    <input type="number" id="maxAds" value="0" min="0" step="50">
+  </label>
+
+  <button id="btnArchive" class="big" disabled>Скачать архив (ZIP)</button>
 
   <script src="lib/ext-api.js"></script>
   <script src="lib/zip.js"></script>
