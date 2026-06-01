@@ -64,6 +64,40 @@
     try { ExtApi.sendMessage(msg).catch(function () {}); } catch (_) { /* SW спит — ок */ }
   }
 
+  // --- глушим автоплей видео FB (грело CPU/память: десятки видео играли разом) ---
+  // Нам видео НЕ нужно проигрывать — URL берём напрямую. Поэтому ставим все
+  // <video> на паузу, мьютим и убираем autoplay — постоянно, пока идёт сбор.
+  let videoKiller = null;
+  function muteAllVideos() {
+    const vids = document.querySelectorAll('video');
+    for (const v of vids) {
+      try {
+        v.muted = true;
+        v.autoplay = false;
+        v.removeAttribute('autoplay');
+        v.preload = 'none';
+        if (!v.paused) v.pause();
+      } catch (_) { /* */ }
+    }
+  }
+  function startVideoKiller() {
+    if (videoKiller) return;
+    muteAllVideos();
+    // на всякий — глушим и при попытке проиграть (FB заводит их заново)
+    document.addEventListener('play', onPlayCapture, true);
+    videoKiller = setInterval(muteAllVideos, 1000);
+  }
+  function stopVideoKiller() {
+    if (videoKiller) { clearInterval(videoKiller); videoKiller = null; }
+    document.removeEventListener('play', onPlayCapture, true);
+  }
+  function onPlayCapture(e) {
+    const v = e.target;
+    if (v && v.tagName === 'VIDEO') {
+      try { v.muted = true; v.pause(); } catch (_) { /* */ }
+    }
+  }
+
   // --- лог: в консоль страницы И в локальный буфер (его читает popup) ---
   function log(text, level) {
     const d = new Date();
@@ -278,7 +312,8 @@
 
     const onLib = /\/ads\/library/i.test(location.href);
     if (!onLib) log('Внимание: это не похоже на страницу Ad Library. Открой facebook.com/ads/library/…', 'warn');
-    log('старт сбора' + (state.config.drillIn ? ' + полный текст из карточек' + (state.config.drillEu ? ' + ЕС' : '') : ''), 'ok');
+    startVideoKiller();
+    log('старт сбора' + (state.config.drillEu ? ' + данные ЕС' : '') + ' · видео заглушены', 'ok');
 
     const buffered = state.buffer.splice(0);
     if (buffered.length) {
@@ -356,6 +391,7 @@
     const was = state.running;
     state.running = false;
     state.drillQueue = [];
+    stopVideoKiller();
     setStatus('finished', { reason: reason });
     sendToSW({ type: 'DONE', reason: reason, collected: state.order.length });
     const tail = state.drillTotal ? (' · детали: ' + (state.drillDone - state.drillFails) + ' ок, ' + state.drillFails + ' без данных') : '';
@@ -394,7 +430,7 @@
         sendResponse && sendResponse({ ok: true });
         return true;
       case 'STOP':
-        if (state.running) { state.running = false; log('останавливаю по запросу…', 'warn'); }
+        if (state.running) { state.running = false; stopVideoKiller(); log('останавливаю по запросу…', 'warn'); }
         sendResponse && sendResponse({ ok: true });
         return true;
       case 'CLEAR':
