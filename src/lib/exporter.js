@@ -215,6 +215,10 @@
     entries.push({ name: 'ads.json', bytes: enc.encode(buildJSON(dataset)) });
     entries.push({ name: 'ads.csv', bytes: enc.encode(buildCSV(dataset)) });
 
+    // лог сбора (что удалось/не удалось, причины промахов ЕС и т.п.)
+    const logLines = (dataset && dataset.log || []).map((e) => (e && e.t) ? e.t : String(e));
+    entries.push({ name: 'log.txt', bytes: enc.encode(logLines.join('\n') || '(лог пуст)') });
+
     const manifestLines = ['# Карта файлов архива (имя<TAB>URL)'];
     for (const line of urlToName) manifestLines.push(line);
     if (skipped > 0) manifestLines.push('# Пропущено по лимиту maxFiles: ' + skipped);

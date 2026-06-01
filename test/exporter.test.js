@@ -38,6 +38,7 @@ global.fetch = async function (url) {
   assert.ok(names.indexOf('ads.json') !== -1, 'archive has ads.json');
   assert.ok(names.indexOf('ads.csv') !== -1, 'archive has ads.csv');
   assert.ok(names.indexOf('manifest.txt') !== -1, 'archive has manifest.txt');
+  assert.ok(names.indexOf('log.txt') !== -1, 'archive has log.txt');
   assert.ok(names.some((n) => n.indexOf('images/') === 0), 'archive has images/*');
   assert.ok(names.some((n) => n.indexOf('videos/') === 0), 'archive has videos/*');
 

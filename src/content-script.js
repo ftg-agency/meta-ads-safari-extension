@@ -185,7 +185,8 @@
         version: version
       },
       summary: summary,
-      ads: ads
+      ads: ads,
+      log: state.log.slice()   // полный лог сбора — уедет в архив (log.txt)
     };
   }
 
