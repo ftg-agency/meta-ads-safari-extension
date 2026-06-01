@@ -220,22 +220,29 @@
   // Цель — выяснить, есть ли охват ЕС прямо в graphql (тогда модалки не нужны).
   // В консоли набери  __FBALS_DUMP_EU()  — скачается файл с такими ответами.
   const euDump = [];
-  const EU_HINT = /(eu_total_reach|reach_estimate|aaa_info|age_country_gender|reached_count|eu_reach|total_reach|demographic_distribution|delivery_by_region)/i;
+  let euDumped = false;
+  let euDumpTimer = null;
+  const EU_HINT = /(eu_total_reach|reach_estimate|aaa_info|age_country_gender|reached_count|eu_reach|total_reach|demographic_distribution|delivery_by_region|reach_by_)/i;
   function captureEuPayload(text) {
-    if (!text || !EU_HINT.test(text)) return;
+    if (euDumped || !text || !EU_HINT.test(text)) return;
     if (euDump.length >= 8) return;
     euDump.push(text);
-    try { console.log('%c[FBALS] поймал graphql с признаком ЕС (#' + euDump.length + '). Набери __FBALS_DUMP_EU() чтобы скачать.', 'color:#2e7d32;font-weight:bold'); } catch (_) {}
+    try { console.log('%c[FBALS] поймал graphql с признаком ЕС (#' + euDump.length + '). Файл скачается автоматически через 2с…', 'color:#2e7d32;font-weight:bold'); } catch (_) {}
+    // авто-выгрузка: консоль работает в другом мире, поэтому качаем сами.
+    if (euDumpTimer) clearTimeout(euDumpTimer);
+    euDumpTimer = setTimeout(dumpEu, 2000);
   }
-  try {
-    window.__FBALS_DUMP_EU = function () {
-      if (!euDump.length) { console.log('[FBALS] пока ничего не поймал — открой карточку с EU transparency и подожди.'); return; }
+  function dumpEu() {
+    if (euDumped || !euDump.length) return;
+    euDumped = true;
+    try {
       const blob = new Blob([euDump.join('\n\n=====FBALS_SPLIT=====\n\n')], { type: 'text/plain' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-      a.download = 'fbals-eu-graphql.txt'; a.click();
-      console.log('[FBALS] выгружено ' + euDump.length + ' ответов в fbals-eu-graphql.txt');
-    };
-  } catch (_) { /* */ }
+      a.download = 'fbals-eu-graphql.txt'; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      console.log('%c[FBALS] выгружено ' + euDump.length + ' ответов → fbals-eu-graphql.txt (в Downloads)', 'color:#2e7d32;font-weight:bold');
+    } catch (e) { try { console.log('[FBALS] не смог выгрузить:', e); } catch (_) {} }
+  }
 
   // --- приём graphql из MAIN-world ---
   window.addEventListener('message', function (ev) {
