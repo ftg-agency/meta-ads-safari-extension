@@ -17,10 +17,11 @@
 
   function readConfig() {
     const maxAds = parseInt($('maxAds').value, 10);
+    const eu = $('deepEu').checked;
     return {
       maxAds: (isNaN(maxAds) || maxAds <= 0) ? 100000 : maxAds,
-      drillIn: $('deep').checked,
-      drillEu: $('deepEu').checked
+      drillIn: eu,   // модалку открываем только ради ЕС; текст и так берём из ленты
+      drillEu: eu
     };
   }
 
