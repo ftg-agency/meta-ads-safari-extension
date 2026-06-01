@@ -271,7 +271,7 @@
         const item = state.drillQueue.shift();
         const ad = item.ad;
         let enrich = null;
-        try { enrich = await DrillIn.openAdDetails(item.el, { eu: state.config.drillEu }); } catch (e) { enrich = { _err: String((e && e.message) || e) }; }
+        try { enrich = await DrillIn.openAdDetails(item.el, { eu: state.config.drillEu, expectId: ad.ad_archive_id }); } catch (e) { enrich = { _err: String((e && e.message) || e) }; }
         state.drillDone++;
         if (enrich && !enrich._err && (enrich.body_text || enrich.eu_total_reach != null)) {
           mergeAd(Object.assign({}, ad, {

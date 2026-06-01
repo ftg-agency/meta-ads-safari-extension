@@ -69,17 +69,23 @@
     },
 
     // Находит ИМЕННО панель деталей (а не навигационное меню Меты, у которого
-    // тоже role="dialog"!). Берём последний dialog с признаками панели деталей.
-    _findOpenModal: function () {
+    // тоже role="dialog"!). Если задан expectId — берём только ту панель, в
+    // которой встречается этот Library ID (защита от чтения чужой/устаревшей
+    // панели при быстрой смене модалок — иначе 18 объявлений получают одну и ту
+    // же обрезанную разбивку).
+    _findOpenModal: function (expectId) {
       const dialogs = Array.prototype.slice.call(document.querySelectorAll('div[role="dialog"]'));
-      // фильтруем меню навигации (Privacy/Terms/Cookies/Ad Library Report)
       const real = dialogs.filter(function (d) {
         const t = d.textContent || '';
-        if (/Ad Library Report|Branded Content|Subscribe to email/i.test(t)) return false; // это меню
+        if (/Ad Library Report|Branded Content|Subscribe to email/i.test(t)) return false; // меню
         return /Ad Details|EU ad delivery|Transparency by location|Reach|Информация об объявлении|охват/i.test(t);
       });
+      if (expectId) {
+        const byId = real.filter((d) => (d.textContent || '').indexOf(expectId) !== -1);
+        if (byId.length) return byId[byId.length - 1];
+        return null; // нужной панели ещё нет — пусть вызывающий подождёт
+      }
       if (real.length) return real[real.length - 1];
-      // запасной вариант — самый «текстастый» dialog, но не меню
       const notMenu = dialogs.filter((d) => !/Ad Library Report|Branded Content/i.test(d.textContent || ''));
       notMenu.sort((a, b) => (b.textContent || '').length - (a.textContent || '').length);
       return notMenu[0] || null;
@@ -90,6 +96,16 @@
       if (close) { try { close.click(); return; } catch (_) { /* игнор */ } }
       // запасной путь — Escape
       try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (_) { /* */ }
+    },
+
+    // Быстро читает общий охват ЕС (для проверки стабилизации рендера).
+    _readReach: function (modal) {
+      const text = this._spacedText(modal).replace(/\s+/g, ' ');
+      const m = text.match(/EU ad delivery\s*Reach\s*([\d.,\s]+?)\s*The number/i) ||
+                text.match(/\bReach\s*([\d.,]+)\s*The number of Meta/i);
+      if (!m) return null;
+      const n = parseInt(m[1].replace(/[^\d]/g, ''), 10);
+      return isNaN(n) ? null : n;
     },
 
     // Текст элемента с пробелами на границах блоков (textContent их теряет,
@@ -190,33 +206,44 @@
       // Карточка может быть уже откреплена от DOM (виртуальный скролл FB).
       if (!card || !card.isConnected) return { _err: 'карточка вне DOM (скролл)' };
 
+      // id этой карточки — чтобы потом убедиться, что открыли панель ИМЕННО её,
+      // а не осталось от предыдущей (иначе разные объявления получают одни данные).
+      const idMatch = (card.textContent || '').match(/(\d{10,})/);
+      const expectId = opts.expectId || (idMatch ? idMatch[1] : '');
+
       // подвести карточку в зону видимости, чтобы FB её не «усыпил»
       try { card.scrollIntoView({ block: 'center' }); } catch (_) { /* */ }
       await this.delay(250);
       if (!card.isConnected) return { _err: 'карточка вне DOM (скролл)' };
 
-      // «See ad details» открывает панель с EU transparency.
-      // «See summary details» — это группа объявлений (без раздела ЕС у самой группы),
-      // поэтому для данных ЕС нужен именно «See ad details».
       let trigger = this._findByText(card, /(See ad details|Информация об объявлении)/i);
       if (!trigger) trigger = this._findByText(card, /(See summary details|Сводные данные)/i);
       if (!trigger) return { _err: 'кнопка деталей не найдена' };
 
       try { trigger.click(); } catch (_) { return { _err: 'клик не прошёл' }; }
 
-      // ждём появления панели
+      // ждём панель ИМЕННО этой карточки (по её Library ID)
       let modal = null;
-      for (let i = 0; i < 12; i++) {
-        await this.delay(500);
-        modal = this._findOpenModal();
-        if (modal && /EU ad delivery|Transparency by location|Reach\s+\d|EU ad audience/i.test(modal.textContent || '')) break;
+      for (let i = 0; i < 16; i++) {
+        await this.delay(400);
+        modal = this._findOpenModal(expectId);
+        if (modal && /EU ad delivery|Transparency by location|Reach|EU ad audience/i.test(modal.textContent || '')) break;
       }
-      if (!modal) modal = this._findOpenModal();
-      if (!modal) return { _err: 'панель деталей не открылась' };
+      if (!modal) modal = this._findOpenModal(expectId) || this._findOpenModal();
+      if (!modal) return { _err: 'панель деталей не открылась (id ' + expectId + ')' };
 
-      // Данные ЕС часто в свёрнутых секциях / подгружаются по мере прокрутки.
-      // Раскрываем секции и скроллим панель вниз, чтобы FB отрендерил охват.
+      // раскрываем секции и скроллим — данные ЕС рендерятся лениво
       await this._revealEu(modal);
+
+      // ждём СТАБИЛИЗАЦИИ охвата: число reach не меняется два замера подряд
+      // (иначе ловим частично отрендеренную таблицу — отсюда фейковые reach=2)
+      let prev = -1;
+      for (let i = 0; i < 8; i++) {
+        const cur = this._readReach(modal);
+        if (cur != null && cur === prev) break;
+        prev = cur;
+        await this.delay(500);
+      }
 
       const details = this.scrapeDetails(modal);
       // диагностика: почему ЕС пуст
