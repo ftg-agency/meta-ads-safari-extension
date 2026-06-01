@@ -216,41 +216,12 @@
     };
   }
 
-  // --- ДИАГНОСТИКА: ловим graphql-ответы с признаками охвата ЕС ---
-  // Цель — выяснить, есть ли охват ЕС прямо в graphql (тогда модалки не нужны).
-  // В консоли набери  __FBALS_DUMP_EU()  — скачается файл с такими ответами.
-  const euDump = [];
-  let euDumped = false;
-  let euDumpTimer = null;
-  const EU_HINT = /(eu_total_reach|reach_estimate|aaa_info|age_country_gender|reached_count|eu_reach|total_reach|demographic_distribution|delivery_by_region|reach_by_)/i;
-  function captureEuPayload(text) {
-    if (euDumped || !text || !EU_HINT.test(text)) return;
-    if (euDump.length >= 8) return;
-    euDump.push(text);
-    try { console.log('%c[FBALS] поймал graphql с признаком ЕС (#' + euDump.length + '). Файл скачается автоматически через 2с…', 'color:#2e7d32;font-weight:bold'); } catch (_) {}
-    // авто-выгрузка: консоль работает в другом мире, поэтому качаем сами.
-    if (euDumpTimer) clearTimeout(euDumpTimer);
-    euDumpTimer = setTimeout(dumpEu, 2000);
-  }
-  function dumpEu() {
-    if (euDumped || !euDump.length) return;
-    euDumped = true;
-    try {
-      const blob = new Blob([euDump.join('\n\n=====FBALS_SPLIT=====\n\n')], { type: 'text/plain' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-      a.download = 'fbals-eu-graphql.txt'; a.style.display = 'none';
-      document.body.appendChild(a); a.click(); a.remove();
-      console.log('%c[FBALS] выгружено ' + euDump.length + ' ответов → fbals-eu-graphql.txt (в Downloads)', 'color:#2e7d32;font-weight:bold');
-    } catch (e) { try { console.log('[FBALS] не смог выгрузить:', e); } catch (_) {} }
-  }
-
   // --- приём graphql из MAIN-world ---
   window.addEventListener('message', function (ev) {
     if (ev.source !== window) return;
     const d = ev.data;
     if (!d || d.source !== 'FBALS_INTERCEPT') return;
-    captureEuPayload(d.payload); // диагностический дамп (оставляем)
-    captureEu(d.payload);        // боевой разбор ЕС из graphql (всегда)
+    captureEu(d.payload);        // боевой разбор ЕС из graphql
     if (!state.running) {
       state.buffer.push(d.payload);
       if (state.buffer.length > 80) state.buffer.shift();
