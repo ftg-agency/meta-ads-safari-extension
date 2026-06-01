@@ -167,6 +167,32 @@
 
   function datasetAds() { return state.order.map((id) => state.adsById[id]); }
 
+  // Восстановление после перезагрузки вкладки (FB убивает её по памяти).
+  // Тянем ранее собранное из фона и продолжаем, а не начинаем с нуля.
+  async function rehydrate() {
+    let restored = 0, euAlready = 0;
+    try {
+      const ds = await ExtApi.sendMessage({ type: 'GET_DATASET' });
+      if (ds && Array.isArray(ds.ads)) {
+        for (const ad of ds.ads) {
+          if (!ad.ad_archive_id) continue;
+          if (!state.adsById[ad.ad_archive_id]) {
+            state.adsById[ad.ad_archive_id] = ad;
+            state.order.push(ad.ad_archive_id);
+          }
+          state.seenIds.add(ad.ad_archive_id);
+          // если у объявления уже есть данные ЕС — не открываем его повторно
+          if (ad.eu_total_reach != null || (ad.eu_reach_breakdown || []).length) {
+            state.drilledIds.add(ad.ad_archive_id);
+            euAlready++;
+          }
+          restored++;
+        }
+      }
+    } catch (_) { /* фон мог не ответить — стартуем с чистого */ }
+    return { restored, euAlready };
+  }
+
   function buildDataset() {
     const ads = datasetAds();
     const meta = readMeta();
@@ -314,6 +340,11 @@
     const onLib = /\/ads\/library/i.test(location.href);
     if (!onLib) log('Внимание: это не похоже на страницу Ad Library. Открой facebook.com/ads/library/…', 'warn');
     startVideoKiller();
+
+    // восстановление после перезагрузки/повторного запуска
+    const rh = await rehydrate();
+    if (rh.restored) log('продолжаю: восстановлено ' + rh.restored + ' объявл. (ЕС уже есть у ' + rh.euAlready + ')', 'ok');
+
     log('старт сбора' + (state.config.drillEu ? ' + данные ЕС' : '') + ' · видео заглушены', 'ok');
 
     const buffered = state.buffer.splice(0);
