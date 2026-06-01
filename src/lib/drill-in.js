@@ -199,6 +199,28 @@
      * @param {Object} [opts] { eu:boolean }
      * @returns {Promise<Object|null>}
      */
+    /**
+     * Лёгкий режим: открыть «See ad details», чтобы FB сделал graphql-запрос
+     * ad_details (данные ЕС перехватит interceptor), и СРАЗУ закрыть панель —
+     * не давая отрендериться таблице на сотни строк (источник утечки памяти).
+     */
+    triggerAdDetails: async function (card) {
+      if (!card || !card.isConnected) return false;
+      try { card.scrollIntoView({ block: 'center' }); } catch (_) { /* */ }
+      await this.delay(150);
+      if (!card.isConnected) return false;
+      let trigger = this._findByText(card, /(See ad details|Информация об объявлении)/i);
+      if (!trigger) trigger = this._findByText(card, /(See summary details|Сводные данные)/i);
+      if (!trigger) return false;
+      try { trigger.click(); } catch (_) { return false; }
+      // дать запросу уйти, затем закрыть панель как можно раньше
+      await this.delay(500);
+      const modal = this._findOpenModal();
+      if (modal) this._closeModal(modal);
+      await this.delay(150);
+      return true;
+    },
+
     openAdDetails: async function (card, opts) {
       opts = opts || {};
       await this._throttle();

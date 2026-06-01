@@ -29,8 +29,9 @@
     'images_count', 'videos_count', 'cards_count',
     'ads_using_creative', 'has_eu_transparency', 'low_impressions',
     'impressions', 'total_active_time',
-    'eu_total_reach', 'eu_breakdown_rows',
+    'eu_total_reach', 'eu_breakdown_rows', 'uk_total_reach',
     'targeting_age', 'targeting_gender', 'targeting_locations',
+    'payer', 'beneficiary',
     'ad_snapshot_url'
   ];
 
@@ -85,6 +86,8 @@
         return (ad.ads_using_creative === null || ad.ads_using_creative === undefined) ? '' : ad.ads_using_creative;
       case 'eu_breakdown_rows':
         return (ad.eu_reach_breakdown || []).length || '';
+      case 'uk_total_reach':
+        return (ad.uk_total_reach === null || ad.uk_total_reach === undefined) ? '' : ad.uk_total_reach;
       case 'has_eu_transparency':
         return ad.has_eu_transparency ? '1' : '';
       case 'low_impressions':

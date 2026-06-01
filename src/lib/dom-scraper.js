@@ -33,9 +33,12 @@
       page_name: '',
       eu_total_reach: null,
       eu_reach_breakdown: [],
+      uk_total_reach: null,
       targeting_age: '',
       targeting_gender: '',
       targeting_locations: '',
+      payer: '',
+      beneficiary: '',
       // доп. поля из реальной разметки Ad Library
       ads_using_creative: null,   // «N ads use this creative and text»
       has_eu_transparency: false, // есть ли раздел EU transparency у объявления

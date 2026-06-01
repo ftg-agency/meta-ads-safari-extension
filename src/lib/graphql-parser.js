@@ -154,9 +154,12 @@
       page_name: String(firstDefined(node.page_name, snap.page_name) || ''),
       eu_total_reach: (node.eu_total_reach !== undefined) ? node.eu_total_reach : null,
       eu_reach_breakdown: asArray(node.eu_reach_breakdown),
+      uk_total_reach: null,
       targeting_age: '',
       targeting_gender: '',
       targeting_locations: '',
+      payer: '',
+      beneficiary: '',
       ads_using_creative: (node.collation_count !== undefined && node.collation_count !== null) ? node.collation_count : null,
       has_eu_transparency: false,
       low_impressions: false,
@@ -237,9 +240,102 @@
     return ads;
   }
 
+  // --- разбор данных охвата ЕС из graphql (ad_details → transparency) ---
+  // Структура (подтверждена на живом ответе):
+  //   transparency_by_location.eu_transparency.{eu_total_reach, gender_audience,
+  //   age_audience{min,max}, location_audience[], age_country_gender_reach_breakdown[]}
+  //   + uk_transparency.total_reach, + aaa_info.payer_beneficiary_data[]
+
+  function flattenBreakdown(arr) {
+    const out = [];
+    for (const c of asArray(arr)) {
+      const country = c.country || '';
+      for (const b of asArray(c.age_gender_breakdowns)) {
+        const age = b.age_range || '';
+        if (b.male != null) out.push({ location: country, age: age, gender: 'Male', reach: b.male });
+        if (b.female != null) out.push({ location: country, age: age, gender: 'Female', reach: b.female });
+        if (b.unknown != null) out.push({ location: country, age: age, gender: 'Unknown', reach: b.unknown });
+      }
+    }
+    return out;
+  }
+
+  // Рекурсивно ищем объекты eu_transparency / ad_details с охватом.
+  function findEuNodes(root) {
+    const found = [];
+    const stack = [root];
+    let guard = 0;
+    while (stack.length && guard < 200000) {
+      guard++;
+      const cur = stack.pop();
+      if (!cur || typeof cur !== 'object') continue;
+      if (cur.eu_transparency || (cur.transparency_by_location && cur.transparency_by_location.eu_transparency)) {
+        found.push(cur);
+      }
+      if (Array.isArray(cur)) { for (let i = 0; i < cur.length; i++) stack.push(cur[i]); }
+      else { for (const k in cur) if (Object.prototype.hasOwnProperty.call(cur, k)) stack.push(cur[k]); }
+    }
+    return found;
+  }
+
+  /**
+   * Достаёт данные ЕС из сырого graphql-ответа ad_details.
+   * @returns {Object|null} { eu_total_reach, eu_reach_breakdown[], uk_total_reach,
+   *   targeting_age, targeting_gender, targeting_locations, payer, beneficiary, ad_archive_id }
+   */
+  function parseEuPayload(text) {
+    const roots = tryParseJson(text);
+    for (const root of roots) {
+      // ad_archive_id — рядом, чтобы привязать к объявлению
+      let adId = '';
+      const idm = String(text).match(/"ad_archive_id"\s*:\s*"?(\d{6,})"?/);
+      if (idm) adId = idm[1];
+
+      const details = (function find(o) {
+        const st = [o]; let g = 0;
+        while (st.length && g < 200000) { g++; const c = st.pop();
+          if (!c || typeof c !== 'object') continue;
+          if (c.transparency_by_location || c.aaa_info) return c;
+          if (Array.isArray(c)) { for (const x of c) st.push(x); }
+          else { for (const k in c) st.push(c[k]); }
+        }
+        return null;
+      })(root);
+      if (!details) continue;
+
+      const tbl = details.transparency_by_location || {};
+      const eu = tbl.eu_transparency;
+      if (!eu) continue;
+
+      const loc = asArray(eu.location_audience).map((l) => l.name).filter(Boolean).join(', ');
+      const age = eu.age_audience ? (eu.age_audience.min + '-' + eu.age_audience.max) : '';
+      const pb = (details.aaa_info && asArray(details.aaa_info.payer_beneficiary_data)[0]) || {};
+
+      return {
+        ad_archive_id: adId,
+        eu_total_reach: (eu.eu_total_reach != null) ? eu.eu_total_reach : null,
+        eu_reach_breakdown: flattenBreakdown(eu.age_country_gender_reach_breakdown),
+        uk_total_reach: (tbl.uk_transparency && tbl.uk_transparency.total_reach != null) ? tbl.uk_transparency.total_reach : null,
+        targeting_age: age,
+        targeting_gender: eu.gender_audience || '',
+        targeting_locations: loc,
+        payer: pb.payer || '',
+        beneficiary: pb.beneficiary || ''
+      };
+    }
+    return null;
+  }
+
+  // Быстрая проверка: есть ли в тексте payload данные ЕС.
+  function hasEuPayload(text) {
+    return typeof text === 'string' && text.indexOf('eu_transparency') !== -1;
+  }
+
   const API = {
     parsePayload,
-    _internal: { domainOf, toIsoDate, normalizeAd, collectAds }
+    parseEuPayload,
+    hasEuPayload,
+    _internal: { domainOf, toIsoDate, normalizeAd, collectAds, flattenBreakdown, findEuNodes }
   };
   if (typeof self !== 'undefined') self.FBALS_Parser = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

@@ -30,7 +30,7 @@ else
 fi
 
 echo "== Node-тесты =="
-for t in test/zip.test.js test/graphql-parser.test.js test/analytics.test.js test/exporter.test.js test/ext-api.test.js; do
+for t in test/zip.test.js test/graphql-parser.test.js test/eu-graphql.test.js test/analytics.test.js test/exporter.test.js test/ext-api.test.js; do
   if node "$t"; then :; else echo "  FAIL $t"; fail=1; fi
 done
 

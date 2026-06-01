@@ -249,7 +249,8 @@
     if (ev.source !== window) return;
     const d = ev.data;
     if (!d || d.source !== 'FBALS_INTERCEPT') return;
-    captureEuPayload(d.payload);
+    captureEuPayload(d.payload); // диагностический дамп (оставляем)
+    captureEu(d.payload);        // боевой разбор ЕС из graphql (всегда)
     if (!state.running) {
       state.buffer.push(d.payload);
       if (state.buffer.length > 80) state.buffer.shift();
@@ -258,8 +259,23 @@
     ingestGraphql(d.payload, d.url);
   });
 
+  // Перехваченные данные ЕС из graphql (ad_details). Ключ — ad_archive_id, либо
+  // '_last' для самого свежего (id в ответе бывает не рядом — берём по контексту
+  // последнего открытого объявления).
+  const euByAd = {};
+  let euLast = null;
+  function captureEu(text) {
+    if (!Parser || !Parser.hasEuPayload || !Parser.hasEuPayload(text)) return;
+    let eu = null;
+    try { eu = Parser.parseEuPayload(text); } catch (_) { eu = null; }
+    if (!eu) return;
+    euLast = eu;
+    if (eu.ad_archive_id) euByAd[eu.ad_archive_id] = eu;
+  }
+
   function ingestGraphql(text, url) {
     if (!Parser) return;
+    captureEu(text); // данные ЕС приходят тем же каналом
     let ads = [];
     try { ads = Parser.parsePayload(text, url); } catch (_) { ads = []; }
     const n = pushAds(ads, 'graphql');
@@ -321,38 +337,49 @@
   function startDrillWorker() {
     if (state.drillBusy) return;
     state.drillBusy = true;
-    DrillIn.configure({ perMin: 20, minInterval: 1500 });
+    DrillIn.configure({ perMin: 30, minInterval: 900 });
     (async function loop() {
       while (state.running && state.drillQueue.length) {
         const item = state.drillQueue.shift();
         const ad = item.ad;
-        let enrich = null;
-        try { enrich = await DrillIn.openAdDetails(item.el, { eu: state.config.drillEu, expectId: ad.ad_archive_id }); } catch (e) { enrich = { _err: String((e && e.message) || e) }; }
+        const id = ad.ad_archive_id;
         state.drillDone++;
-        if (enrich && !enrich._err && (enrich.body_text || enrich.eu_total_reach != null)) {
+
+        // Открываем карточку ТОЛЬКО чтобы спровоцировать graphql-запрос ad_details.
+        // Данные ЕС берём из перехваченного ответа (чистый JSON), а НЕ из DOM —
+        // модалку сразу закрываем, таблица на 100-260 строк не рендерится → нет утечки.
+        euLast = null;
+        let eu = null;
+        try {
+          await DrillIn.triggerAdDetails(item.el);   // клик + быстрый close
+          // ждём, пока перехватчик принесёт ЕС-ответ (до ~6с)
+          for (let i = 0; i < 20; i++) {
+            await sleep(300);
+            if (euByAd[id]) { eu = euByAd[id]; break; }
+            if (euLast) { eu = euLast; break; } // id в ответе бывает не рядом — берём свежий
+          }
+        } catch (e) { /* */ }
+
+        if (eu && (eu.eu_total_reach != null || eu.eu_reach_breakdown.length)) {
           mergeAd(Object.assign({}, ad, {
-            body_text: (enrich.body_text && enrich.body_text.length > (ad.body_text || '').length) ? enrich.body_text : ad.body_text,
-            eu_total_reach: (enrich.eu_total_reach != null) ? enrich.eu_total_reach : ad.eu_total_reach,
-            eu_reach_breakdown: (enrich.eu_reach_breakdown && enrich.eu_reach_breakdown.length) ? enrich.eu_reach_breakdown : ad.eu_reach_breakdown,
-            targeting_age: enrich.targeting_age || ad.targeting_age,
-            targeting_gender: enrich.targeting_gender || ad.targeting_gender,
-            targeting_locations: enrich.targeting_locations || ad.targeting_locations,
+            eu_total_reach: (eu.eu_total_reach != null) ? eu.eu_total_reach : ad.eu_total_reach,
+            eu_reach_breakdown: eu.eu_reach_breakdown.length ? eu.eu_reach_breakdown : ad.eu_reach_breakdown,
+            uk_total_reach: (eu.uk_total_reach != null) ? eu.uk_total_reach : ad.uk_total_reach,
+            targeting_age: eu.targeting_age || ad.targeting_age,
+            targeting_gender: eu.targeting_gender || ad.targeting_gender,
+            targeting_locations: eu.targeting_locations || ad.targeting_locations,
+            payer: eu.payer || ad.payer,
+            beneficiary: eu.beneficiary || ad.beneficiary,
             source: 'merged'
           }));
-          sendToSW({ type: 'ADS', ads: [state.adsById[ad.ad_archive_id]] });
-          const chars = (enrich.body_text || '').length;
-          let euTxt;
-          if (enrich.eu_total_reach != null) euTxt = ', ЕС ' + enrich.eu_total_reach + ' (' + (enrich.eu_reach_breakdown || []).length + ' стр.)';
-          else euTxt = enrich._euNote ? (' — ' + enrich._euNote) : '';
-          log('✓ ' + ad.ad_archive_id + ' (' + chars + ' симв.' + euTxt + ') — ' + state.drillDone + '/' + state.drillTotal,
-              enrich.eu_total_reach != null ? 'ok' : null);
+          sendToSW({ type: 'ADS', ads: [state.adsById[id]] });
+          log('✓ ЕС ' + id + ': reach ' + eu.eu_total_reach + ' (' + eu.eu_reach_breakdown.length + ' стр.) — ' + state.drillDone + '/' + state.drillTotal, 'ok');
         } else {
           state.drillFails++;
-          log('✗ детали ' + ad.ad_archive_id + ': ' + ((enrich && enrich._err) || 'не нашёл данных') + ' — ' + state.drillDone + '/' + state.drillTotal, 'warn');
+          log('✗ ЕС ' + id + ': graphql не принёс охват (нет ЕС у объявления?) — ' + state.drillDone + '/' + state.drillTotal, 'warn');
         }
-        if (state.status === 'finishing') {
-          setStatus('finishing', { message: 'догружаю тексты ' + state.drillDone + '/' + state.drillTotal });
-        }
+        setStatus(state.status === 'finishing' ? 'finishing' : 'running',
+          { message: 'данные ЕС ' + state.drillDone + '/' + state.drillTotal });
       }
       state.drillBusy = false;
     })();
