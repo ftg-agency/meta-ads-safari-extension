@@ -222,35 +222,54 @@
 
       try { trigger.click(); } catch (_) { return { _err: 'клик не прошёл' }; }
 
-      // ждём панель ИМЕННО этой карточки (по её Library ID)
+      // ждём панель ИМЕННО этой карточки (по её Library ID); если за отведённое
+      // время своя панель не пришла — НЕ берём чужую (иначе вернутся дубли),
+      // помечаем как таймаут.
       let modal = null;
-      for (let i = 0; i < 16; i++) {
+      let matchedById = false;
+      for (let i = 0; i < 20; i++) {
         await this.delay(400);
-        modal = this._findOpenModal(expectId);
-        if (modal && /EU ad delivery|Transparency by location|Reach|EU ad audience/i.test(modal.textContent || '')) break;
+        const byId = this._findOpenModal(expectId);
+        if (byId) {
+          modal = byId; matchedById = true;
+          if (/EU ad delivery|Transparency by location|Reach|EU ad audience/i.test(byId.textContent || '')) break;
+        }
       }
-      if (!modal) modal = this._findOpenModal(expectId) || this._findOpenModal();
-      if (!modal) return { _err: 'панель деталей не открылась (id ' + expectId + ')' };
+      // если по id не нашли, но открыта РОВНО одна реальная панель — это почти
+      // наверняка наша (id мог не успеть отрисоваться). Берём её осторожно.
+      if (!modal) {
+        const any = this._findOpenModal();
+        const dialogs = document.querySelectorAll('div[role="dialog"]');
+        if (any && dialogs.length <= 2) modal = any; // <=2: панель + возможное меню
+      }
+      if (!modal) return { _err: 'панель не открылась/занята (id ' + expectId + ')' };
 
       // раскрываем секции и скроллим — данные ЕС рендерятся лениво
       await this._revealEu(modal);
 
-      // ждём СТАБИЛИЗАЦИИ охвата: число reach не меняется два замера подряд
+      // ждём СТАБИЛИЗАЦИИ охвата: одно и то же число два замера подряд
       // (иначе ловим частично отрендеренную таблицу — отсюда фейковые reach=2)
-      let prev = -1;
-      for (let i = 0; i < 8; i++) {
+      let prev = -1, stable = false;
+      for (let i = 0; i < 12; i++) {
         const cur = this._readReach(modal);
-        if (cur != null && cur === prev) break;
+        if (cur != null && cur === prev) { stable = true; break; }
         prev = cur;
         await this.delay(500);
       }
+      if (!stable && prev != null && prev > 0) {
+        // не успело стабилизироваться, но число есть — дадим ещё один длинный шаг
+        await this.delay(1200);
+      }
 
       const details = this.scrapeDetails(modal);
+      details._matchedById = matchedById;
       // диагностика: почему ЕС пуст
       if (details.eu_total_reach == null) {
         const t = modal.textContent || '';
-        if (/Transparency by location|EU ad audience|EU ad delivery/i.test(t)) {
-          details._euNote = 'раздел ЕС есть, но охват не отрисован/не найден';
+        if (!matchedById) {
+          details._euNote = 'панель не подтверждена по id (возможно, чужая/не успела)';
+        } else if (/Transparency by location|EU ad audience|EU ad delivery/i.test(t)) {
+          details._euNote = 'раздел ЕС есть, но охват не отрисовался';
         } else {
           details._euNote = 'у объявления нет раздела охвата ЕС';
         }
