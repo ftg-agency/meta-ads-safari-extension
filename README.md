@@ -40,7 +40,10 @@ src/
     zip.js               Минимальный ZIP-энкодер (STORE, без зависимостей).
 test/                    Node-тесты (без зависимостей) + фикстуры.
 scripts/build.sh         Сборка папки расширения в dist/safari (manifest + src/).
-scripts/package-dmg.sh   Подпись + нотаризация + DMG для раздачи вне App Store.
+scripts/make-dmg.sh      Готовый .app → .dmg (без подписи, переиспользуется CI).
+scripts/package-dmg.sh   Локально: подпись + DMG + нотаризация + staple.
+.github/workflows/       build-dmg.yml — авто-сборка DMG по тегу v* (см. docs/).
+docs/DMG-RELEASE.md      Полная инструкция по сборке/релизу DMG.
 run-tests.sh             Прогон тестов + статические проверки.
 ```
 
@@ -93,20 +96,23 @@ xcrun safari-web-extension-converter dist/safari \
 
 У нас есть аккаунт **Apple Developer**, поэтому раздаём нормальный
 подписанный и нотаризованный DMG — без «Разрешить неподписанные расширения».
-
-```bash
-bash scripts/package-dmg.sh
-```
-
-Скрипт: `codesign` (Developer ID Application) → `xcrun notarytool submit`
-→ `xcrun stapler staple` → готовый `dist/*.dmg`. Переменные вверху скрипта
-(`APP_NAME`, `SIGN_IDENTITY`, `TEAM_ID`, `NOTARY_PROFILE`) правьте под себя;
-`safari-web-extension-converter` + сборка `.app` в Xcode — отдельный ручной шаг
-(см. выше).
-
 Для конечного пользователя это: **открыл `.dmg` → перетащил `.app` в Applications
-→ запустил → включил расширение в Настройках Safari**. Никаких «Разрешить
-неподписанные расширения».
+→ запустил → включил расширение в Настройках Safari**.
+
+**Полная инструкция (локально + авто-сборка в CI):
+[docs/DMG-RELEASE.md](docs/DMG-RELEASE.md).**
+
+Кратко:
+
+- **Локально** — `bash scripts/package-dmg.sh`: `codesign` (Developer ID
+  Application) → DMG (`scripts/make-dmg.sh`) → `xcrun notarytool submit`
+  → `xcrun stapler staple` → готовый `dist/*.dmg`. Перед этим нужно один раз
+  сконвертировать и собрать `.app` (см. инструкцию).
+- **Автоматически** — пуш тега `vX.Y.Z` запускает
+  [`.github/workflows/build-dmg.yml`](.github/workflows/build-dmg.yml) на
+  macOS-раннере: сборка → подпись Developer ID → нотаризация → DMG
+  прикрепляется к GitHub **Release** этого тега. Нужны секреты репозитория
+  (см. инструкцию).
 
 ## Особенности Safari
 
