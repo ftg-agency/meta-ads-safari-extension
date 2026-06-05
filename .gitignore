@@ -5,8 +5,8 @@
 .claude/
 .env-bootstrap-tmp
 
-# Сборка Safari (генерируется build.sh)
-safari/build/
+# Сборка Safari + артефакты раздачи (генерируются scripts/)
+dist/
 
 # Артефакты тестов
 /tmp-test/
