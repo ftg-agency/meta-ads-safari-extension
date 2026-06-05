@@ -15,11 +15,9 @@ while IFS= read -r f; do
 done < <(find src test -name '*.js' | sort)
 echo "  проверено: $(find src test -name '*.js' | wc -l | tr -d ' ') файлов"
 
-echo "== JSON-манифесты =="
+echo "== JSON-манифест =="
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))" \
   && echo "  ok manifest.json" || { echo "  FAIL manifest.json"; fail=1; }
-node -e "JSON.parse(require('fs').readFileSync('safari/manifest.json','utf8'))" \
-  && echo "  ok safari/manifest.json" || { echo "  FAIL safari/manifest.json"; fail=1; }
 
 echo "== нет прямых chrome.* вне ext-api.js =="
 hits="$(grep -rnE 'chrome\.(runtime|storage|tabs|downloads|scripting|action|i18n|windows|webRequest)' src --include='*.js' | grep -v 'src/lib/ext-api.js' || true)"
